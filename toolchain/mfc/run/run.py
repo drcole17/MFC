@@ -143,6 +143,7 @@ def __execute_job_script(qsystem: queues.QueueSystem):
     # any files the queue system generates (like .err and .out) are created
     # in the correct directory.
     cmd = qsystem.gen_submit_cmd(__job_script_filepath())
+    cwd = os.path.dirname(ARG("input"))
 
     verbosity = ARG('verbose')
 
@@ -151,11 +152,18 @@ def __execute_job_script(qsystem: queues.QueueSystem):
         cons.print(f"  [dim]$ {' '.join(str(c) for c in cmd)}[/dim]")
         cons.print()
 
+    # For interactive runs on Unix, tee output to a .out file so users get
+    # the same log file that batch runs produce via the scheduler.
+    if isinstance(qsystem, queues.InteractiveSystem) and os.name != 'nt':
+        out_filepath = os.path.abspath(os.path.join(cwd, f"{ARG('name')}.out"))
+        cmd = ["/bin/bash", "-c",
+               f"set -o pipefail; {shlex.join([str(x) for x in cmd])} 2>&1 | tee {shlex.quote(out_filepath)}"]
+
     # Execute the job script with appropriate output handling
     # At verbosity >= 2, show print_cmd=True for system() calls
     print_cmd = verbosity >= 2
 
-    if system(cmd, cwd=os.path.dirname(ARG("input")), print_cmd=print_cmd).returncode != 0:
+    if system(cmd, cwd=cwd, print_cmd=print_cmd).returncode != 0:
         raise MFCException(f"Submitting batch file for {qsystem.name} failed. It can be found here: {__job_script_filepath()}. Please check the file for errors.")
 
 
